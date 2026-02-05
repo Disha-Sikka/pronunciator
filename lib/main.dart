@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:async'; // ✅ REQUIRED for Timer
 
 import 'package:flutter/material.dart';
 import 'package:flutter_sound/flutter_sound.dart';
@@ -34,8 +35,11 @@ class _RecorderPageState extends State<RecorderPage> {
   final FlutterSoundRecorder _recorder = FlutterSoundRecorder();
 
   bool isRecording = false;
-  String? filePath;
   bool isSending = false;
+  String? filePath;
+
+  int secondsRecorded = 0;
+  Timer? timer;
 
   @override
   void initState() {
@@ -58,64 +62,79 @@ class _RecorderPageState extends State<RecorderPage> {
       sampleRate: 16000,
     );
 
-    setState(() {
-      isRecording = true;
+    secondsRecorded = 0;
+    timer = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (mounted) {
+        setState(() => secondsRecorded++);
+      }
     });
+
+    setState(() => isRecording = true);
   }
 
   Future<void> stopRecording() async {
     await _recorder.stopRecorder();
-    setState(() {
-      isRecording = false;
-    });
+    timer?.cancel();
+
+    setState(() => isRecording = false);
   }
 
   Future<void> sendAudioToBackend() async {
-  if (filePath == null) return;
+    if (filePath == null) return;
 
-  setState(() => isSending = true);
+    
+    setState(() => isSending = true);
 
-  try {
-    final uri = Uri.parse(
-      "http://192.168.1.7:8000/check-pronunciation", // CHANGE IP
-    );
-
-    final request = http.MultipartRequest("POST", uri)
-      ..fields["word"] = "thought"
-      ..files.add(
-        await http.MultipartFile.fromPath("audio", filePath!),
+    try {
+      final uri = Uri.parse(
+        "http://192.168.1.22:8000/check-pronunciation", // ⚠️ YOUR LAPTOP IP
       );
 
-    final streamedResponse = await request
-        .send()
-        .timeout(const Duration(seconds: 10));
+      final request = http.MultipartRequest("POST", uri)
+        ..fields["word"] = "thought"
+        ..files.add(
+          await http.MultipartFile.fromPath("audio", filePath!),
+        );
 
-    final responseBody =
-        await streamedResponse.stream.bytesToString();
+      final streamedResponse = await request
+          .send()
+          .timeout(const Duration(seconds: 10));
 
-    final data = jsonDecode(responseBody);
+      final responseBody =
+          await streamedResponse.stream.bytesToString();
 
-    if (!mounted) return;
+      final data = jsonDecode(responseBody);
 
-    showDialog(
-      context: context,
-      builder: (_) => AlertDialog(
-        title: const Text("Result"),
-        content: Text("Score: ${data['score']}"),
-      ),
-    );
-  } catch (e) {
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text("ERROR: $e")),
-    );
-  } finally {
-    setState(() => isSending = false);
+      if (!mounted) return;
+
+      showDialog(
+        context: context,
+        builder: (_) => AlertDialog(
+          title: const Text("Pronunciation Result"),
+          content: Text(
+            "Word: ${data['word']}\nScore: ${data['score']}",
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text("OK"),
+            )
+          ],
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text("ERROR: $e")),
+      );
+    } finally {
+      setState(() => isSending = false);
+    }
   }
-}
 
   @override
   void dispose() {
+    timer?.cancel();
     _recorder.closeRecorder();
     super.dispose();
   }
@@ -134,16 +153,32 @@ class _RecorderPageState extends State<RecorderPage> {
             children: [
               ElevatedButton(
                 onPressed: isRecording ? stopRecording : startRecording,
-                child:
-                    Text(isRecording ? "Stop Recording" : "Start Recording"),
+                child: Text(
+                  isRecording ? "Stop Recording" : "Start Recording",
+                ),
               ),
+
+              const SizedBox(height: 12),
+
+              if (isRecording)
+                Text(
+                  "Recording... $secondsRecorded s",
+                  style: const TextStyle(
+                    color: Colors.red,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+
               const SizedBox(height: 16),
+
               if (filePath != null)
                 Text(
                   "Saved file:\n$filePath",
                   textAlign: TextAlign.center,
                 ),
+
               const SizedBox(height: 24),
+
               ElevatedButton(
                 onPressed:
                     (filePath == null || isSending) ? null : sendAudioToBackend,
