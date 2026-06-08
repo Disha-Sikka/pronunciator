@@ -1,13 +1,11 @@
+cd D:\pronunciator
+cat >> .gitignore << 'EOF'
 # Python
 backend/venv/
-__pycache__/
+backend/__pycache__/
+backend/uploads/
 
 # Flutter
+mobile/pronounce_app/build/
+EOFmobile/pronounce_app/build/
 build/
-.dart_tool/
-android/.gradle/
-android/local.properties
-
-# OS
-.DS_Store
-Thumbs.db
